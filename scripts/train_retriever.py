@@ -12,28 +12,67 @@ from torch.utils.data import DataLoader
 import json, argparse, os
 
 def load_qa(path):
-    for line in open(path, encoding='utf-8'):
-        rec = json.loads(line)
-        yield rec['question'], rec['context_ids'][0]   # first chunk as positive
+    examples = []
+    for i, line in enumerate(open(path, encoding='utf-8')):
+        try:
+            rec = json.loads(line)
+            question = rec['question']
+            context_id = rec['context_ids'][0]
+            examples.append((question, context_id))
+        except Exception as e:
+            print(f"⚠️ Error in QA line {i+1}: {e}")
+    return examples
 
 def main(args):
     # 1) build mapping chunk_id → text
     chunk_lookup = {}
     for fn in os.listdir(args.chunks_dir):
-        for line in open(os.path.join(args.chunks_dir, fn), encoding='utf-8'):
-            j = json.loads(line); chunk_lookup[j['chunk_id']] = j['text']
+        if not fn.endswith(".jsonl"):
+            continue
+        path = os.path.join(args.chunks_dir, fn)
+        try:
+            with open(path, encoding='utf-8') as f:
+                for i, line in enumerate(f):
+                    try:
+                        j = json.loads(line)
+                        chunk_lookup[j['chunk_id']] = j['text']
+                    except json.JSONDecodeError as je:
+                        print(f"⚠️ JSON decode error in {fn} at line {i+1}: {je}")
+                    except Exception as e:
+                        print(f"⚠️ Unexpected error in {fn} at line {i+1}: {e}")
+        except Exception as e:
+            print(f"❌ Failed to open file {fn}: {e}")
 
-    train_examples = [InputExample(texts=[q, chunk_lookup[cid]])
-                      for q, cid in load_qa(args.train)]
+    # 2) load training examples
+    qa_pairs = load_qa(args.train)
+    print(f"📊 Loaded {len(qa_pairs)} QA pairs from {args.train}")
+
+    train_examples = []
+    skipped = 0
+    for q, cid in qa_pairs:
+        if cid not in chunk_lookup:
+            print(f"⚠️ Skipping example – chunk_id not found: {cid}")
+            skipped += 1
+            continue
+        train_examples.append(InputExample(texts=[q, chunk_lookup[cid]]))
+    print(f"✅ Final training examples: {len(train_examples)} (Skipped: {skipped})")
+
+    if not train_examples:
+        print("❌ No valid training data. Exiting.")
+        return
+
+    # 3) Training
+    print("🚀 Starting retriever training...")
     loader = DataLoader(train_examples, batch_size=16, shuffle=True)
-
-    model = SentenceTransformer(args.base_model)   # e.g. batterydata/batterybert-cased
-    loss  = losses.MultipleNegativesRankingLoss(model)
+    model = SentenceTransformer(args.base_model)
+    loss = losses.MultipleNegativesRankingLoss(model)
 
     model.fit(train_objectives=[(loader, loss)],
-              epochs=3,
-              warmup_steps=100,
+              epochs=2,                # for quick test
+              warmup_steps=5,
               output_path=args.out_dir)
+
+    print(f"✅ Training complete. Model saved to: {args.out_dir}")
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
@@ -42,3 +81,4 @@ if __name__ == "__main__":
     ap.add_argument("--base_model", default="batterydata/batterybert-cased")
     ap.add_argument("--out_dir", default="models/retriever_bbert_dpr")
     main(ap.parse_args())
+
