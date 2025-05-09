@@ -121,14 +121,14 @@ We use **QLoRA** for efficient supervised fine-tuning of the language model.
 To train the generator, use the following script:
 
 ```bash
-python scripts/train_generator_sft.py --train data/qa/train.jsonl --base_model mistralai/Mistral-7B-Instruct-v0.2 --out_dir models/generator_lora
+python scripts/train_generator_sft.py \
+  --train data/qa/train.jsonl \
+  --chunks_dir data/processed/chunks \
+  --base_model mistralai/Mistral-7B-Instruct-v0.2 \
+  --out_dir models/generator_lora
 
 # for testing the model and dataset
-python scripts/train_retriever.py \
-  --chunks_dir data/processed/chunks \
-  --train data/qa/train_fixed.jsonl \
-  --base_model sentence-transformers/all-MiniLM-L6-v2 \
-  --out_dir models/test_retriever_fixed
+python scripts/train_retriever.py --chunks_dir data/processed/chunks --train data/qa/train_fixed.jsonl --base_model sentence-transformers/all-MiniLM-L6-v2 --out_dir models/test_retriever_fixed
 
 # if chunks are not working
 python scripts/fix_chunk_ids.py
@@ -151,7 +151,10 @@ After training, it’s essential to evaluate your model’s performance. You can
 Run the evaluation script in Jupyter:
 
 ```bash
-jupyter notebook notebooks/02_evaluate_ragas.ipynb
+python scripts/eval_ragas.py \
+    --eval_file data/qa/eval.jsonl \
+    --model_dir models/generator_lora \
+    --chunk_dir data/processed/chunks
 ```
 
 This notebook performs the following:
