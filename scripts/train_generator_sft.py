@@ -4,6 +4,7 @@
 """
 python scripts/train_generator_sft.py \
   --train data/qa/train.jsonl \
+  --chunks_dir data/processed/chunks \
   --base_model mistralai/Mistral-7B-Instruct-v0.2 \
   --out_dir models/generator_lora
 """
@@ -20,11 +21,22 @@ from transformers import (
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 import json, argparse
 
-def stream_sft_records(path):
+def load_chunk_lookup(chunks_dir="/data/processed/chunks"):
+    lookup = {}
+    import os
+    for fn in os.listdir(chunks_dir):
+        if not fn.endswith(".jsonl"): continue
+        with open(os.path.join(chunks_dir, fn), encoding="utf-8") as f:
+            for line in f:
+                rec = json.loads(line)
+                lookup[rec["chunk_id"]] = rec["text"]
+    return lookup
+
+def stream_sft_records(path, chunk_lookup):
     for line in open(path, encoding="utf-8"):
         j = json.loads(line)
         prompt = ("<context>\n" +
-                  "\n\n".join(j["context_ids"]) +
+                  "\n\n".join(chunk_lookup.get(cid, f"[MISSING {cid}]") for cid in j["context_ids"]) +
                   "\n</context>\n\n" +
                   "### Question:\n" + j["question"] +
                   "\n\n### Answer:\n")
@@ -60,7 +72,8 @@ def main(args):
     )
     model = get_peft_model(model, lora)
 
-    ds = list(stream_sft_records(args.train))
+    chunk_lookup = load_chunk_lookup(args.chunks_dir)
+    ds = list(stream_sft_records(args.train, chunk_lookup))
 
     def tokenize(example):
         encoded = tok(
@@ -108,6 +121,7 @@ def main(args):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--train", required=True)
+    ap.add_argument("--chunks_dir", default="data/processed/chunks")
     ap.add_argument("--base_model", default="mistralai/Mistral-7B-Instruct-v0.2")
     ap.add_argument("--out_dir", default="models/generator_lora")
     main(ap.parse_args())

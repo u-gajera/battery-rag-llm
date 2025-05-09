@@ -14,6 +14,7 @@ import json
 import argparse
 from pathlib import Path
 from tqdm import tqdm
+from tabulate import tabulate
 
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 from langchain_community.llms.huggingface_pipeline import HuggingFacePipeline
@@ -125,14 +126,7 @@ def run_rag_evaluation(eval_file, model_dir, chunk_dir):
 
     # 9) Print results
     df = report.to_pandas()
-    print("\n=== RAG Evaluation Report ===")
-    try:
-        # prettier Markdown table if tabulate is installed
-        print(df.to_markdown(index=False))
-    except ImportError:
-        # fallback to plain text
-        print(df.to_string(index=False))
-
+    print(tabulate(df, headers="keys", showindex=False, tablefmt="github"))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
